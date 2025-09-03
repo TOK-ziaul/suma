@@ -1,82 +1,78 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useGame } from "../../contexts/GameContext";
 import Timer from "../../components/Timer";
 import PlayerCard from "../../components/PlayerCard";
-
-interface ShelfProduct {
-  id: string;
-  name: string;
-  image: string;
-  price: number;
-  multiplier: number;
-  totalPrice: number;
-}
+import { Product } from "../../types";
 
 const FinalRound: React.FC = () => {
   const [started, setStarted] = useState(false);
-  const [shelves, setShelves] = useState<ShelfProduct[]>([]);
+  const [roundData, setRoundData] = useState<Product[][]>([]);
+  const [currentRound, setCurrentRound] = useState(0);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [showResults, setShowResults] = useState(false);
-  const [roundScores, setRoundScores] = useState<Record<string, number>>({});
 
-  const { gameState, updatePlayerScore } = useGame();
+  const { gameState } = useGame();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Fetch 3 products for final round (one per row)
-    fetch("http://localhost:5000/api/products?count=3")
+    // Fetch final round data
+    fetch("http://localhost:5000/api/products/final-round")
       .then((res) => res.json())
-      .then((data) => {
-        const productsWithMultiplier = data.map((product: ShelfProduct) => {
-          const multiplier = Math.floor(Math.random() * 3) + 1; // 1-3x
-          return {
-            ...product,
-            multiplier,
-            totalPrice: product.price * multiplier,
-          };
-        });
-        setShelves(productsWithMultiplier);
-      })
+      .then((data) => setRoundData(data))
       .catch(console.error);
   }, []);
 
-  const startRound = () => setStarted(true);
+  const startRound = () => {
+    setStarted(true);
+  };
 
-  const submitSelection = (playerId: string, rowIndex: number) => {
+  const submitSelection = (playerId: string, row: number) => {
     setSelections((prev) => ({
       ...prev,
-      [playerId]: rowIndex,
+      [playerId]: row,
     }));
   };
 
-  const allPlayersSubmitted = () =>
-    gameState.players.every((player) => selections[player.id] !== undefined);
-
-  const calculatePoints = (
-    selectedRow: number,
-    actualMostExpensive: number
-  ) => {
-    // Placeholder: assign points, logic can be updated later
-    return selectedRow === actualMostExpensive ? 200 : 0;
+  const showRoundResults = () => {
+    setShowResults(true);
   };
 
-  const revealResults = () => {
-    const prices = shelves.map((p) => p.totalPrice);
-    const mostExpensiveIndex = prices.indexOf(Math.max(...prices));
+  const nextRound = () => {
+    if (currentRound < roundData.length - 1) {
+      setCurrentRound(currentRound + 1);
+      setSelections({});
+      setShowResults(false);
+    } else {
+      // Game completed, show final scores
+      navigate("/game/results");
+    }
+  };
 
-    const scores: Record<string, number> = {};
-    gameState.players.forEach((player) => {
-      const points = calculatePoints(selections[player.id], mostExpensiveIndex);
-      scores[player.id] = points;
-      updatePlayerScore(player.id, points);
-    });
+  const allPlayersSelected = () => {
+    return gameState.players.every(
+      (player) => selections[player.id] !== undefined
+    );
+  };
 
-    setRoundScores(scores);
-    setShowResults(true);
+  const getMostExpensiveRow = (products: Product[]) => {
+    let maxTotal = 0;
+    let maxRow = 1;
+
+    for (let i = 0; i < 3; i++) {
+      const total = products[i].price * (products[i].quantity || 1);
+      if (total > maxTotal) {
+        maxTotal = total;
+        maxRow = i + 1;
+      }
+    }
+
+    return maxRow;
   };
 
   if (!started) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-blue-900 to-purple-900">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <div className="max-w-2xl w-full text-center">
           <div className="bg-white bg-opacity-10 backdrop-blur-md rounded-2xl p-8 shadow-2xl border border-white border-opacity-20">
             <h1 className="text-5xl font-bold text-white mb-4">Final Round</h1>
@@ -84,12 +80,12 @@ const FinalRound: React.FC = () => {
               Priciest Shelf?
             </h2>
             <p className="text-gray-300 mb-8 text-lg">
-              Look at 3 products and their multipliers. Choose which row is the
-              most expensive!
+              Look at three rows of products and select which row has the
+              highest total value!
             </p>
             <button
               onClick={startRound}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all transform hover:scale-105"
+              className="bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all transform hover:scale-105"
             >
               Start Final Round
             </button>
@@ -99,81 +95,112 @@ const FinalRound: React.FC = () => {
     );
   }
 
-  if (shelves.length === 0) {
+  if (roundData.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-900 to-purple-900">
-        <div className="text-white text-xl">Loading products...</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-white text-xl">Loading final round...</div>
       </div>
     );
   }
 
+  const products = roundData[currentRound];
+
   return (
-    <div className="min-h-screen p-4 bg-gradient-to-b from-blue-900 to-purple-900">
-      <div className="max-w-4xl mx-auto">
-        {/* Timer */}
-        <div className="flex justify-center mb-8">
-          <Timer />
+    <div className="min-h-screen p-4">
+      <div className="max-w-7xl mx-auto">
+        <Timer className="flex justify-center mb-8" />
+
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">Final Round</h1>
+          <h2 className="text-2xl font-semibold text-yellow-400 mb-2">
+            Priciest Shelf?
+          </h2>
+          <p className="text-gray-300">
+            Round {currentRound + 1} of {roundData.length}
+          </p>
         </div>
 
-        {/* Rows */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {shelves.map((product) => (
-            <div
-              key={product.id}
-              className="relative bg-white bg-opacity-5 backdrop-blur-md rounded-xl p-4 text-center"
-            >
-              {showResults && (
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-green-600 bg-opacity-70 text-white font-bold px-3 py-1 rounded">
-                  ${product.totalPrice.toFixed(2)}
+        {/* Product Rows */}
+        <div className="space-y-6 mb-8">
+          {[1, 2, 3].map((row) => {
+            const product = products[row - 1];
+            const totalPrice = product.price * (product.quantity || 1);
+
+            return (
+              <div
+                key={row}
+                className="bg-white bg-opacity-10 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white border-opacity-20"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-yellow-400 text-black font-bold text-xl px-4 py-2 rounded-lg">
+                      Row {row}
+                    </div>
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-24 h-24 object-cover rounded-lg"
+                    />
+                    <div>
+                      <h3 className="text-xl font-bold text-white">
+                        {product.name}
+                      </h3>
+                      <p className="text-gray-300">
+                        Quantity: {product.quantity || 1}x
+                      </p>
+                      {showResults && (
+                        <p className="text-yellow-400 font-bold text-lg">
+                          Total: ${totalPrice.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {showResults && getMostExpensiveRow(products) === row && (
+                    <div className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold">
+                      MOST EXPENSIVE!
+                    </div>
+                  )}
                 </div>
-              )}
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-32 h-32 mx-auto object-cover rounded-lg mb-2"
-              />
-              <div className="text-white font-semibold mb-1">
-                {product.multiplier}x
               </div>
-              <div className="text-yellow-400 font-bold">{product.name}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Players Selection */}
+        {/* Player Selection Area */}
         {!showResults && (
-          <div className="flex justify-between gap-4 mb-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {gameState.players.map((player) => (
               <div
                 key={player.id}
-                className="bg-white bg-opacity-10 backdrop-blur-md rounded-xl p-4 border w-full"
+                className="bg-white bg-opacity-10 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white border-opacity-20"
               >
                 <PlayerCard
                   player={player}
                   showScore={false}
-                  className="mb-3"
+                  className="mb-4"
                 />
-                <div className="grid grid-cols-3 gap-2">
-                  {shelves.map((_, rowIndex) => (
-                    <button
-                      key={rowIndex}
-                      onClick={() => submitSelection(player.id, rowIndex)}
-                      disabled={selections[player.id] !== undefined}
-                      className={`py-2 rounded-lg transition-all ${
-                        selections[player.id] === rowIndex
-                          ? "bg-yellow-600 text-white"
-                          : "bg-white bg-opacity-20 text-white hover:bg-opacity-30"
-                      }`}
-                    >
-                      Row {rowIndex + 1}
-                    </button>
-                  ))}
-                </div>
-                {selections[player.id] !== undefined && (
-                  <div className="mt-2 bg-green-600 bg-opacity-20 rounded-lg p-1 text-center">
+
+                {selections[player.id] ? (
+                  <div className="bg-green-600 bg-opacity-20 rounded-lg p-3 text-center">
                     <span className="text-green-200 font-semibold">
-                      Selected: Row {selections[player.id] + 1}
+                      Selected Row {selections[player.id]}
                     </span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-white text-sm mb-2">
+                      Select the most expensive row:
+                    </p>
+                    {[1, 2, 3].map((row) => (
+                      <button
+                        key={row}
+                        onClick={() => submitSelection(player.id, row)}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                      >
+                        Row {row}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -181,35 +208,63 @@ const FinalRound: React.FC = () => {
           </div>
         )}
 
-        {/* Reveal Button */}
-        {!showResults && allPlayersSubmitted() && (
-          <div className="text-center mb-8">
+        {showResults && (
+          <div className="bg-white bg-opacity-10 backdrop-blur-md rounded-2xl p-8 shadow-2xl border border-white border-opacity-20 mb-8">
+            <h3 className="text-2xl font-bold text-white text-center mb-6">
+              Round Results
+            </h3>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {gameState.players.map((player) => {
+                const selectedRow = selections[player.id];
+                const correctRow = getMostExpensiveRow(products);
+                const correct = selectedRow === correctRow;
+
+                return (
+                  <div
+                    key={player.id}
+                    className={`p-4 rounded-lg ${
+                      correct
+                        ? "bg-green-600 bg-opacity-30"
+                        : "bg-red-600 bg-opacity-30"
+                    }`}
+                  >
+                    <h4 className="font-bold text-white">{player.name}</h4>
+                    <p className="text-gray-300">Selected: Row {selectedRow}</p>
+                    <p
+                      className={`font-bold ${
+                        correct ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      {correct ? "✓ Correct!" : "✗ Wrong"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {!showResults && allPlayersSelected() && (
+          <div className="text-center">
             <button
-              onClick={revealResults}
-              className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-all transform hover:scale-105"
+              onClick={showRoundResults}
+              className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all transform hover:scale-105"
             >
               Reveal Results
             </button>
           </div>
         )}
 
-        {/* Results */}
         {showResults && (
-          <div className="flex justify-between  gap-4">
-            {gameState.players.map((player) => (
-              <div
-                key={player.id}
-                className="bg-white bg-opacity-20 backdrop-blur-md rounded-xl p-4 text-center w-full"
-              >
-                <h4 className="font-bold text-white">{player.name}</h4>
-                <p className="text-gray-300">
-                  Selected: Row {selections[player.id] + 1}
-                </p>
-                <p className="text-yellow-400 font-bold">
-                  +{roundScores[player.id]} points
-                </p>
-              </div>
-            ))}
+          <div className="text-center">
+            <button
+              onClick={nextRound}
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all transform hover:scale-105"
+            >
+              {currentRound < roundData.length - 1
+                ? "Next Round"
+                : "View Final Results"}
+            </button>
           </div>
         )}
       </div>
